@@ -1,31 +1,34 @@
 package Sordid::CGI;
 
+use Sordid::CGI::JQuery;
 use Template::Alloy;
 use File::Basename 'fileparse';
 use base Exporter;
 our @EXPORT_OK = qw/%_GET %_POST/;
+#our @EXPORT_OK = qw( %_GET %_POST );
 =head1 NAME
 
 Sordid::CGI - Rapid, Simple CGI application development
 
 =head1 VERSION
 
-Version 0.2
+Version 0.1
 
 =cut
 
-our $VERSION = '0.2';
+our $VERSION = '0.3';
 
-sub import {
-    my ($class, @args) = @_;
-    
-    for (@args) {
-        if ($_ eq ':jquery') {
-            __PACKAGE__->load_jquery;
-        }
-    }
-}
-
+# commented out because it was screwing with GET and POST
+#sub import {
+#    my ($class, @args) = @_;
+#    
+#    for (@args) {
+#        if ($_ eq ':jquery') {
+#            __PACKAGE__->load_jquery;
+#        }
+#    }
+#}
+#__PACKAGE__->load_jquery;
 =head1 SYNOPSIS
 
 Sordid::CGI can be used to create quick (and dirty) CGI applications. While I recommend 
@@ -40,9 +43,10 @@ working example of a simple query string.
 
     # don't forget to import %_GET, %_POST or both depending on what you need
     use Sordid::CGI qw( %_GET );
-    use HTML::JQuery;
 
     my $webs = Sordid::CGI->new;
+
+    $webs->start_html; # send content-type header information
 
     if (exists $_GET{name}) {
         print "<p>Hello, " . $_GET{name} . "</p>\n";
@@ -77,35 +81,24 @@ sub new {
         do "$args{config}";
         $self->{c} = \%$config;
     }
-   
+    my $method = $ENV{'REQUEST_METHOD'}; 
     my $qs = (exists $ENV{'QUERY_STRING'}) ? $ENV{'QUERY_STRING'} : undef;
     __PACKAGE__->do_GET($qs) if ($qs);
-    __PACKAGE__->do_POST if (exists $ENV{REQUEST_METHOD} && $ENV{REQUEST_METHOD} eq 'POST');
+    __PACKAGE__->do_POST if (defined $method && $method eq 'POST');
     bless $self, $class;
     return $self;
 }
 
 sub load_jquery {
     my $self = shift;
-    our @ISA = qw/HTML::JQuery/;
-    $self->{jquery} = HTML::JQuery->new;
+    our @ISA = qw/Sordid::CGI::JQuery/;
+    $self->{jquery} = Sordid::CGI::JQuery->new;
 }
 
 sub jquery {
     my ($self, $args) = shift;
     return $self->$args;
 }
-
-=head2 stash
-
-Pushes a variable into the stash to be used in a template.
-
-    $s->stash(title => 'My Page Title');
-    
-    # template.tt
-    <title><% title %></title>
-
-=cut
 
 sub stash {
     my ($self, %a) = @_;
@@ -152,6 +145,27 @@ sub do_POST {
     return;
 }
 
+=head2 Sordid::CGI->start_html
+Prints the content type to the browser. Things like redirects MUST 
+be written BEFORE you start_html
+
+    use Sordid::CGI qw( %_POST );
+    
+    my $webs = Sordid::CGI->new;
+
+    if (! exists($_POST{'submit_login'})) {
+        $webs->redirect('/cgi-bin/login.pl');
+    }
+
+    $webs->start_html; # prints similar to Content-Type: text/html\n\n
+
+    print qq{ <p>Hello, World!</p> };
+=cut
+
+sub start_html {
+    print "Content-Type: text/html\r\n\r\n";
+}
+
 =head2 Sordid::CGI->redirect
 
 Redirects the user to a different page. Redirects need to be 
@@ -172,7 +186,6 @@ sub redirect {
 }
 
 # Reference: http://glennf.com/writing/hexadecimal.url.encoding.html
-
 =head2 Sordid::CGI->url_decode
 
 Turns all of the weird HTML characters into human readable stuff. This is 
@@ -214,20 +227,6 @@ sub view {
         $self->{stash}
     );
 }
-
-=head2 process
-
-Processes a Template::Alloy template. Without any arguments the template will be 
-<template_path>/<filename>.tt
-
-    # index.pl
-    
-    use Sordid::CGI;
-    
-    $s = Sordid::CGI->new(view => 'default.tt'); # layout will be <view_path>/default.tt
-    
-    $s->process; # processes <template_path>/index.tt
-=cut
 
 sub process {
     my ($self, $temp, $var) = @_;

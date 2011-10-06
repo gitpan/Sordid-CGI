@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Sordid-CGI
-version:            0.2
+version:            0.3
 abstract:           Rapid, Simple CGI application development
 author:
     - Brad Haywood <brad@geeksware.net>
