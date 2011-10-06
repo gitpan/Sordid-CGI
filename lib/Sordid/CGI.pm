@@ -1,19 +1,30 @@
 package Sordid::CGI;
 
-use Exporter;
-our @ISA = qw(Exporter);
-our @EXPORT_OK = qw( %_GET %_POST );
+use Template::Alloy;
+use File::Basename 'fileparse';
+use base Exporter;
+our @EXPORT_OK = qw/%_GET %_POST/;
 =head1 NAME
 
 Sordid::CGI - Rapid, Simple CGI application development
 
 =head1 VERSION
 
-Version 0.1
+Version 0.2
 
 =cut
 
-our $VERSION = '0.1';
+our $VERSION = '0.2';
+
+sub import {
+    my ($class, @args) = @_;
+    
+    for (@args) {
+        if ($_ eq ':jquery') {
+            __PACKAGE__->load_jquery;
+        }
+    }
+}
 
 =head1 SYNOPSIS
 
@@ -29,10 +40,9 @@ working example of a simple query string.
 
     # don't forget to import %_GET, %_POST or both depending on what you need
     use Sordid::CGI qw( %_GET );
+    use HTML::JQuery;
 
     my $webs = Sordid::CGI->new;
-
-    $webs->start_html; # send content-type header information
 
     if (exists $_GET{name}) {
         print "<p>Hello, " . $_GET{name} . "</p>\n";
@@ -42,7 +52,6 @@ working example of a simple query string.
     }
 =cut
     
-
 our %_GET = ();
 our %_POST = ();
 
@@ -54,14 +63,55 @@ GET or POST has been submitted, then adds the values into %_GET and
 =cut
 
 sub new {
-    my $class = shift;
-    $self = {};
+    my ($class, %args) = @_;
+    $self = {
+        template_path => 'template'||$args{template_path},
+        wrapper => $args{view}||undef
+    };
+
+    $self->{stash} = {};
+
+    if (defined $args{config}) {
+        print "Getting config\n";
+        our $config = {};
+        do "$args{config}";
+        $self->{c} = \%$config;
+    }
+   
     my $qs = (exists $ENV{'QUERY_STRING'}) ? $ENV{'QUERY_STRING'} : undef;
     __PACKAGE__->do_GET($qs) if ($qs);
- 
     __PACKAGE__->do_POST if (exists $ENV{REQUEST_METHOD} && $ENV{REQUEST_METHOD} eq 'POST');
     bless $self, $class;
     return $self;
+}
+
+sub load_jquery {
+    my $self = shift;
+    our @ISA = qw/HTML::JQuery/;
+    $self->{jquery} = HTML::JQuery->new;
+}
+
+sub jquery {
+    my ($self, $args) = shift;
+    return $self->$args;
+}
+
+=head2 stash
+
+Pushes a variable into the stash to be used in a template.
+
+    $s->stash(title => 'My Page Title');
+    
+    # template.tt
+    <title><% title %></title>
+
+=cut
+
+sub stash {
+    my ($self, %a) = @_;
+    for (keys %a) {
+        $self->{stash}->{$_} = $a{$_};
+    }
 }
 
 sub do_GET {
@@ -102,27 +152,6 @@ sub do_POST {
     return;
 }
 
-=head2 Sordid::CGI->start_html
-Prints the content type to the browser. Things like redirects MUST 
-be written BEFORE you start_html
-
-    use Sordid::CGI qw( %_POST );
-    
-    my $webs = Sordid::CGI->new;
-
-    if (! exists($_POST{'submit_login'})) {
-        $webs->redirect('/cgi-bin/login.pl');
-    }
-
-    $webs->start_html; # prints similar to Content-Type: text/html\n\n
-
-    print qq{ <p>Hello, World!</p> };
-=cut
-
-sub start_html {
-    print "Content-Type: text/html\r\n\r\n";
-}
-
 =head2 Sordid::CGI->redirect
 
 Redirects the user to a different page. Redirects need to be 
@@ -143,6 +172,7 @@ sub redirect {
 }
 
 # Reference: http://glennf.com/writing/hexadecimal.url.encoding.html
+
 =head2 Sordid::CGI->url_decode
 
 Turns all of the weird HTML characters into human readable stuff. This is 
@@ -169,5 +199,50 @@ sub url_encode {
     $string =~ s/ /\+/g;
     return $string;
 }
+
+sub include {
+    my ($self, $template) = @_;
+
+    require $self->{template_path} . '/' . $template . '.pl';
+}
+
+sub view {
+    my ($self, $v) = @_;
+
+    $self->{stash}->{template}->process(
+        "$v.tt",
+        $self->{stash}
+    );
+}
+
+=head2 process
+
+Processes a Template::Alloy template. Without any arguments the template will be 
+<template_path>/<filename>.tt
+
+    # index.pl
+    
+    use Sordid::CGI;
+    
+    $s = Sordid::CGI->new(view => 'default.tt'); # layout will be <view_path>/default.tt
+    
+    $s->process; # processes <template_path>/index.tt
+=cut
+
+sub process {
+    my ($self, $temp, $var) = @_;
+    use FindBin;
+    print "Content-Type: text/html; charset: utf-8;\n\n";    
+    $self->{stash}->{tt} = Template::Alloy->new(
+            INCLUDE_PATH => [$self->{template_path}, "$FindBin::Bin"],
+            WRAPPER      => "view/$self->{wrapper}"||undef,
+            START_TAG => quotemeta('<%'),
+            END_TAG   => quotemeta('%>'),
+    );
+    my $fname = $0;
+    my ($name, $path, $suffix) = fileparse($fname, '\.[^\.]*');
+    $self->{stash}->{tt}->process($temp||$name . '.tt', $self->{stash}, $var||undef);
+}
+
 1;
 
