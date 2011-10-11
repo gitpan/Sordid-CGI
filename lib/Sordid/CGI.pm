@@ -1,6 +1,5 @@
 package Sordid::CGI;
 
-use Sordid::CGI::JQuery;
 use Template::Alloy;
 use File::Basename 'fileparse';
 use base Exporter;
@@ -12,48 +11,52 @@ Sordid::CGI - Rapid, Simple CGI application development
 
 =head1 VERSION
 
-Version 0.1
+Version 0.4
 
 =cut
 
-our $VERSION = '0.3';
+our $VERSION = '0.4';
 
-# commented out because it was screwing with GET and POST
-#sub import {
-#    my ($class, @args) = @_;
-#    
-#    for (@args) {
-#        if ($_ eq ':jquery') {
-#            __PACKAGE__->load_jquery;
-#        }
-#    }
-#}
-#__PACKAGE__->load_jquery;
 =head1 SYNOPSIS
+
+*NOTE* Please be aware that as of 0.5 I will be giving Sordid::CGI a complete revamp. The _GET, _POST 
+and _SESSION hashes will be diminished and replaced by something nicer and less PHPish.
 
 Sordid::CGI can be used to create quick (and dirty) CGI applications. While I recommend 
 the use of awesome frameworks that can use FastCGI, like Catalyst, sometimes you want 
 to just write out some quick Perl code, instead of learning an entire framework. A 
 working example of a simple query string.
 
+    ## index.pl
     #!/usr/bin/env perl
-
-    use warnings;
-    use strict;
 
     # don't forget to import %_GET, %_POST or both depending on what you need
     use Sordid::CGI qw( %_GET );
 
-    my $webs = Sordid::CGI->new;
-
-    $webs->start_html; # send content-type header information
+    my $s = Sordid::CGI->new(view => 'default.tt');
+    
+    $s->stash(title => "The I like to Greet Page!");
 
     if (exists $_GET{name}) {
-        print "<p>Hello, " . $_GET{name} . "</p>\n";
+        $s->stash(name => $_GET{name});
     }
     else {
-        print "<p>Hi Anonymous!</p>\n";
+        $s->stash(name => 'Anonymous');
     }
+
+    $s->process('greet.tt');
+
+    ## view/default.tt
+    
+    <!doctype html><html><head><title><% title %></title></head>
+    <body>
+        <% content %>
+    </body>
+    </html>
+
+    ## template/greet.tt
+    
+    Hello there, <% name %>!
 =cut
     
 our %_GET = ();
@@ -64,6 +67,7 @@ our %_POST = ();
 Creates a new instance of Sordid::CGI and also detects whether 
 GET or POST has been submitted, then adds the values into %_GET and 
 %_POST respectively.
+
 =cut
 
 sub new {
@@ -87,17 +91,6 @@ sub new {
     __PACKAGE__->do_POST if (defined $method && $method eq 'POST');
     bless $self, $class;
     return $self;
-}
-
-sub load_jquery {
-    my $self = shift;
-    our @ISA = qw/Sordid::CGI::JQuery/;
-    $self->{jquery} = Sordid::CGI::JQuery->new;
-}
-
-sub jquery {
-    my ($self, $args) = shift;
-    return $self->$args;
 }
 
 sub stash {
@@ -145,27 +138,6 @@ sub do_POST {
     return;
 }
 
-=head2 Sordid::CGI->start_html
-Prints the content type to the browser. Things like redirects MUST 
-be written BEFORE you start_html
-
-    use Sordid::CGI qw( %_POST );
-    
-    my $webs = Sordid::CGI->new;
-
-    if (! exists($_POST{'submit_login'})) {
-        $webs->redirect('/cgi-bin/login.pl');
-    }
-
-    $webs->start_html; # prints similar to Content-Type: text/html\n\n
-
-    print qq{ <p>Hello, World!</p> };
-=cut
-
-sub start_html {
-    print "Content-Type: text/html\r\n\r\n";
-}
-
 =head2 Sordid::CGI->redirect
 
 Redirects the user to a different page. Redirects need to be 
@@ -186,10 +158,12 @@ sub redirect {
 }
 
 # Reference: http://glennf.com/writing/hexadecimal.url.encoding.html
+
 =head2 Sordid::CGI->url_decode
 
 Turns all of the weird HTML characters into human readable stuff. This is 
 automatically called when you get POST or GET data
+
 =cut
 
 sub url_decode {
@@ -203,6 +177,7 @@ sub url_decode {
 =head2 Sordid::CGI->url_encode
 
 This works the same as url_decode, except around the other way.
+
 =cut
 
 sub url_encode {
@@ -227,6 +202,16 @@ sub view {
         $self->{stash}
     );
 }
+
+=head2 process
+
+Processes the template. If no argument is passed then the template will be 
+$self->{$template_path}/<filename>.tt
+
+    $s->process;
+    $s->process('about.tt');
+
+=cut
 
 sub process {
     my ($self, $temp, $var) = @_;
